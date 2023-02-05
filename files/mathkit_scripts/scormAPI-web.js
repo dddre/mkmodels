@@ -127,6 +127,9 @@ function _SCORM() {
                 this.displayErrorInfo(errCode);
             }
         }
+        if(SiteAPI.isEnabled()){
+            result = SiteAPI.getDataValue(name);
+        }
         return result;
     };
 
@@ -146,6 +149,9 @@ function _SCORM() {
                 this.displayErrorInfo(this.getLastErrorCode());
             }
         }
+        if(SiteAPI.isEnabled()){
+            result = SiteAPI.setDataValue(name, value);
+        }
         return result;
     };
 
@@ -161,6 +167,9 @@ function _SCORM() {
             if (result != "true") {
                 this.displayErrorInfo(this.getLastErrorCode());
             }
+        }
+        if(SiteAPI.isEnabled()){
+            result = SiteAPI.commit();
         }
         return result;
     };
@@ -192,7 +201,7 @@ function _SCORM() {
     };
     
     this.isAvailable = function(){
-        return SCORM.getAPI()!= null;
+        return SCORM.getAPI()!= null || (SiteAPI != null && SiteAPI.isEnabled());
     }
 
     //helpers
@@ -234,10 +243,83 @@ function _SCORM() {
     }
     this.setIntermediateCommit = function( isIntermediate ) {
         var value = "" + isIntermediate;
-        return this.setDataValue("_1c.intermediate_commit", value);
+        var result = "false";
+        var api = this.getAPI();
+        if (!this.terminated && api != null) {
+            result = api.SetValue("_1c.intermediate_commit", value);
+        }
+        return result;
     }
     this.isIntermediateCommit = function( ) {
-        return this.getDataValue("_1c.intermediate_commit");
+        var result = "";
+        var api = this.getAPI();
+        if (!this.terminated && api != null) {
+            result = api.GetValue("_1c.intermediate_commit");
+            var errCode = this.getLastErrorCode();
+            if (errCode != "0"){
+                result = undefined;
+            }
+        }
+        return result;
+    }
+    //advanced SCORM reporting
+    this.interactionsCount = function( ) {
+        return this.getDataValue("cmi.interactions._count ");
+    }
+    this.getInteractionID = function( index ) {
+        return this.getDataValue("cmi.interactions."+index+".id");
+    }
+    this.setInteractionID = function( index, id ) {
+        return this.setDataValue("cmi.interactions."+index+".id", id);
+    }
+    this.getInteractionType = function( index ) {
+        return this.getDataValue("cmi.interactions."+index+".type");
+    }
+    this.setInteractionType = function( index, type ) {
+        return this.setDataValue("cmi.interactions."+index+".type", type);
+    }
+    this.getInteractionLearnerResponse = function( index ) {
+        return this.getDataValue("cmi.interactions."+index+".learner_response");
+    }
+    this.setInteractionLearnerResponse = function( index, learnerResponse ) {
+        return this.setDataValue("cmi.interactions."+index+".learner_response", learnerResponse);
+    }
+    this.getInteractionResult = function( index ) {
+        return this.getDataValue("cmi.interactions."+index+".result");
+    }
+    this.setInteractionResult = function( index, result ) {
+        return this.setDataValue("cmi.interactions."+index+".result", result);
+    }
+    this.getInteractionDescription = function( index ) {
+        return this.getDataValue("cmi.interactions."+index+".description");
+    }
+    this.setInteractionDescription = function( index, description ) {
+        return this.setDataValue("cmi.interactions."+index+".description", description);
+    }
+    //advanced SCORM reporting: suggested functions
+    this.saveInteractionResult = function (modelID,objectID,sheetID,result,question,answer){
+        if(SCORM.isAvailable()){
+            var index = SCORM.findInteractionIndexForObject(modelID,objectID, sheetID);
+            if(index == -1){
+                index = SCORM.interactionsCount();
+                SCORM.setInteractionID(index,""+modelID+"_"+sheetID+"_"+objectID);
+                SCORM.setInteractionType(index,"long-fill-in");
+            }
+            SCORM.setInteractionResult(index,result);
+            SCORM.setInteractionDescription(index,question);
+            SCORM.setInteractionLearnerResponse(index,answer);
+        }
+    }
+    this.findInteractionIndexForObject = function(modelID,objectID,sheetID){
+        if(SCORM.isAvailable()){
+            var _count = SCORM.interactionsCount();
+            for(var i = 0; i<_count; i++){
+                if(SCORM.getInteractionID(i).localeCompare(""+modelID+"_"+sheetID+"_"+objectID) == 0){
+                    return i;
+                }
+            }
+            return -1;
+        }
     }
 }
 
@@ -251,3 +333,31 @@ window.onbeforeunload = function() {
 window.onunload = function() {
     SCORM.terminate();
 };
+
+// Пересылка информации о выполнении на сайт
+function _SiteAPI(){
+    this.isEnabled = function(){
+        return SiteForwarding.isEnabled();
+    };
+
+    this.commit = function(){
+        return SiteForwarding.commit();
+    };
+
+    this.setDataValue = function(name,value){
+        var propertyPrefix = name.substring(0,3);
+        if(propertyPrefix.localeCompare("cmi")==0)
+            return SiteForwarding.getScoreObject().SCORM[name] = value;
+        else
+            return SiteForwarding.getScoreObject()[name] = value;
+    };
+
+    this.getDataValue = function(name){
+        var propertyPrefix = name.substring(0,3);
+        if(propertyPrefix.localeCompare("cmi")==0)
+            return SiteForwarding.getScoreObject().SCORM[name];
+        else
+            return SiteForwarding.getScoreObject()[name];
+    };
+}
+var SiteAPI = new _SiteAPI();
